@@ -8,6 +8,8 @@ Usage:
 2. Go to Save Image and make sure the map options and resolution are set correctly.
 3. Follow through and save an image to the `/tmp` directory, so that it's the default save location. Then turn off the save image mode (by clicking "Save Image" again).
 4. Run this script and then click on the Google Earth Pro window.
+
+__You can't interact with your computer while this is running, otherwise things will go wrong!__
 """
 
 import os
