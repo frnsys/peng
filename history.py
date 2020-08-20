@@ -19,10 +19,14 @@ from time import sleep
 from tqdm import tqdm
 import pyscreenshot as ImageGrab
 
+SAVE_IMAGE_MODE = False
+
 xdo = Xdo()
 win_id = xdo.select_window_with_click()
 
+
 def go_to(lat, lng):
+    """Go to a lat, lng by entering it into the search field"""
     text = '{},{}'.format(lat, lng)
 
     # Click on text input
@@ -47,6 +51,7 @@ def go_to(lat, lng):
 
 
 def clear_search():
+    """Clear search field"""
     # Click on text input
     xdo.move_mouse(150, 125)
     xdo.click_window(win_id, 1)
@@ -55,8 +60,13 @@ def clear_search():
 
 
 def toggle_save_image_mode():
-    # I don't know if there's a way to check
-    # if the save image mode is active or not.
+    # There isn't (as far as I can tell)
+    # a way to track if the save image mode is active
+    # through the interface/Xdo.
+    # Try to keep track of it manually, though
+    # if the user toggles it manually through the UI
+    # then this will be out-of-sync.
+    SAVE_IMAGE_MODE = !SAVE_IMAGE_MODE
 
     # For some reason this doesn't work
     # xdo.send_keysequence_window(win_id, b'Control_L+Alt_L+s')
@@ -65,9 +75,14 @@ def toggle_save_image_mode():
     xdo.move_mouse(1250, 50)
     xdo.click_window(win_id, 1)
 
+    sleep(0.25)
+
 
 def save_image(path):
-    # NOTE: Must be preceded by `toggle_save_image_mode` (only once, so that it's active)
+    # Ensure save image mode is active
+    if !SAVE_IMAGE_MODE:
+        toggle_save_image_mode()
+
     filename = os.path.basename(path)
 
     # Move to "Save Image..."
@@ -89,12 +104,19 @@ def save_image(path):
     xdo.move_mouse(1400, 850)
     sleep(0.5)
     xdo.click_window(save_dialog_id, 1)
-    sleep(10)
+    sleep(8)
 
     # Move to specified location
     os.rename('/tmp/{}'.format(filename), path)
 
+    # Turn off save image mode
+    toggle_save_image_mode()
+
+
 def save_historical(ticks, dir):
+    """Save historical images
+    - ticks: how many images to save, starting from most recent to oldest"""
+
     # Historical imagery must already be enabled
     for i in tqdm(range(ticks)):
         # Click back on historical timeline
@@ -106,19 +128,10 @@ def save_historical(ticks, dir):
         xdo.click_window(win_id, 1)
         sleep(3)
 
-        # Enable save image mode
-        toggle_save_image_mode()
-        sleep(0.25)
-
         # Save the image
         name = '{}'.format(ticks-i).zfill(4)
         path = os.path.join(dir, '{}.jpg'.format(name))
         save_image(path)
-
-        # Disable save image mode,
-        # so we can see the imagery date
-        toggle_save_image_mode()
-        sleep(0.25)
 
         # Extract the imagery date
         size = xdo.get_window_size(win_id)
@@ -146,7 +159,7 @@ if __name__ == '__main__':
             # Wait for animation to complete
             sleep(5)
 
-            save_historical(20, '/tmp/testing')
+            save_historical(80, '/tmp/testing')
     except Exception as e:
         print(e)
         sys.exit(1)
