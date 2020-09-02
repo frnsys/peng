@@ -1,6 +1,6 @@
 import os
 import ee
-from .util import download_ee_image, get_bounds
+from .util import download_ee_image, get_bounds, uuid
 
 def maskClouds(image):
     # Bits 3 and 5 are cloud shadow and cloud, respectively.
@@ -20,8 +20,7 @@ tasks = ee.data.getTaskList()
 # Using Landsat 8 Surface Reflectance Tier 1
 # Resolution of 30m^2
 # <https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_SR>
-# l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
-l8sr = ee.ImageCollection('SKYSAT/GEN-A/PUBLIC/ORTHO/RGB')
+l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
 
 # Rename band names
 # (see prev link for reference)
@@ -60,8 +59,7 @@ class Satellite:
 
     # https://developers.google.com/earth-engine/scale
     # Smaller scale means more detail
-    def get_image(self, feat, radius=0.02, scale=30):
-        moves = [(radius, radius), (radius, -radius), (-radius, -radius), (-radius, radius)]
+    def get_feature_image(self, feat, radius=0.02, scale=30):
         feat = ee.Feature(feat)
         region = self.get_image_region(feat)
         data = feat.getInfo()
@@ -69,6 +67,7 @@ class Satellite:
         type = data['geometry']['type']
         coords = data['geometry']['coordinates']
         if type == 'Point':
+            moves = [(radius, radius), (radius, -radius), (-radius, -radius), (-radius, radius)]
             bounds = [[coords[0]+r0, coords[1]+r1] for r0, r1 in moves]
         elif type == 'Polygon':
             bounds = coords
@@ -85,10 +84,9 @@ class Satellite:
         params = {'region': bounds, 'scale': scale}
         return image, params
 
-    def get_images(self, feature_collection, chunk_size=10, **kwargs):
+    def get_feature_images(self, feature_collection, chunk_size=10, **kwargs):
         images = []
         n_feats = feature_collection.size().getInfo()
-        moves = [(radius, radius), (radius, -radius), (-radius, -radius), (-radius, radius)]
 
         # Process in chunks to avoid
         # exhausing EE memory
@@ -103,28 +101,37 @@ class Satellite:
                 images.append(self.get_image(feat))
         return images
 
-    def download_image(self, feat, dir='img', **kwargs):
-        id = feat['id']
-        impath = os.path.join(dir, '{}.png'.format(id))
-        if os.path.exists(impath):
-            return id, impath
-        image, params = self.get_image(feat, **kwargs)
-        url = image.getDownloadURL(params=params)
-        impath = download_ee_image(url, id, impath)
-        return id, impath
+    def get_area_image(self, bounds, scale=30):
+        y0, x0, y1, x1 = bounds
+        geom = {
+            'type': 'Polygon',
+            'coordinates': [[
+                [x0, y0],
+                [x0, y1],
+                [x1, y1],
+                [x1, y0],
+                [x0, y0],
+            ]]
+        }
+        return self.get_feature_image(geom, radius=0, scale=scale)
 
-    def export_image_to_drive(self, feat, folder, max_pixels=1e8, crs='EPSG:3857', **kwargs):
+    def download_image(self, image, params, path, id=None):
+        id = id or uuid()
+        url = image.getDownloadURL(params=params)
+        download_ee_image(url, id, path)
+        return id
+
+    def export_image_to_drive(self, image, params, folder, max_pixels=1e8, crs='EPSG:3857', id=None):
         # Note: EPSG:3857 is Web Mercator
         # View tasks with `earthengine task list`
         # Exports to the drive of the account authenticated with
         #   `earthengine authenticate`
-        id = feat['id']
+        id = id or uuid()
 
         # Check if task already running for this feature
         # if any(t['description'] == id and t['state'] in ['READY', 'RUNNING', 'COMPLETED'] for t in tasks):
         #     return
 
-        image, params = self.get_image(feat, **kwargs)
         params['description'] = id
         params['folder'] = folder
 

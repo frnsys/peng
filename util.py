@@ -1,10 +1,9 @@
-import re
 import os
 import zipfile
 import requests
 from PIL import Image
+from uuid import uuid1
 
-DOCID_RE = re.compile('docid=([a-z0-9]+)')
 
 def download(url, outfile):
     """download a file"""
@@ -20,8 +19,6 @@ def download(url, outfile):
 
 
 def download_ee_image(url, id, impath, working_dir='/tmp', keep_files=False):
-    imgid = DOCID_RE.search(url).group(1)
-
     if not os.path.exists(working_dir):
         os.makedirs(working_dir)
     outdir = os.path.join(working_dir, id)
@@ -42,7 +39,7 @@ def download_ee_image(url, id, impath, working_dir='/tmp', keep_files=False):
 
     # Merge RGB images
     chans = [
-        os.path.join(outdir, '{}.vis-{}.tif'.format(imgid, chan))
+        os.path.join(outdir, 'download.vis-{}.tif'.format(chan))
         for chan in ['red', 'green', 'blue']
     ]
 
@@ -71,3 +68,14 @@ def get_bounds(polygons):
             if ymax is None or y > ymax:
                 ymax = y
     return xmin, ymin, xmax, ymax
+
+
+def intersects(bbox_a, bbox_b):
+    xmin_a, ymin_a, xmax_a, ymax_a = bbox_a
+    xmin_b, ymin_b, xmax_b, ymax_b = bbox_b
+    return (xmax_a >= xmin_b and xmax_b >= xmin_a) and \
+        (ymax_a >= ymin_b and ymax_b >= ymin_a)
+
+
+def uuid():
+    return uuid1().hex
