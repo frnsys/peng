@@ -3,15 +3,16 @@ import tempfile
 import matplotlib
 import rasterio.warp
 import rasterio.features
+import numpy as np
+import matplotlib.pyplot as plt
 from rasterio.windows import Window
 from rasterio.enums import Resampling
-from pyproj import CRS, Transformer
 from rasterio.plot import show, reshape_as_image
-from PIL import Image, ImageFont, ImageDraw
+from pyproj import CRS, Transformer
+from PIL import Image
 
 # For X11 forwarding
 matplotlib.use('TkAgg')
-
 
 class GeoTIFF:
     def __init__(self, path):
@@ -20,21 +21,28 @@ class GeoTIFF:
         print('height', self.dataset.height)
         print('bounds', self.dataset.bounds)
 
-    def _window_for_bounds(self, bounds, from_proj):
+    @property
+    def dataset(self):
+        return self._dataset
+
+    @dataset.setter
+    def dataset(self, dataset):
+        self._dataset = dataset
+        self.proj = CRS(dataset.crs.to_string())
+        self.transformers = {}
+
+    def _window_for_bounds(self, bounds, from_proj='epsg:4326'):
         """Calculate the correct window based on the specified bounds
         Helpful reference: <https://epsg.io/transform>"""
-        to_proj = CRS(self.dataset.crs.to_string())
-        transformer = Transformer.from_crs(from_proj, to_proj)
         lat0, lon0, lat1, lon1 = bounds
-        x0, y0 = transformer.transform(lat0, lon0)
-        x1, y1 = transformer.transform(lat1, lon1)
-        py0, px0 = self.dataset.index(x0, y0)
-        py1, px1 = self.dataset.index(x1, y1)
-        w = px1 - px0
-        h = py1 - py0
-        return Window(px0, py0, w, h)
+        pr0, pc0 = self.point_to_index((lat0, lon0), from_proj=from_proj)
+        pr1, pc1 = self.point_to_index((lat1, lon1), from_proj=from_proj)
+        w = pc1 - pc0
+        h = pr1 - pr0
+        return Window(pc0, pr0, w, h)
 
     def data_for_bounds(self, index, bounds, from_proj):
+        """Retrieve data for the specified bounds"""
         window = self._window_for_bounds(bounds, from_proj)
         return self.dataset.read(index, window=window)
 
@@ -49,7 +57,7 @@ class GeoTIFF:
                 dst.write(data)
             self.dataset = rasterio.open(tf.name)
 
-    def apply_bounds(self, bounds, from_proj):
+    def apply_bounds(self, bounds, from_proj='epsg:4326'):
         """Apply bounds in-place"""
         window = self._window_for_bounds(bounds, from_proj)
         self._apply(self.dataset.read(window=window), {
@@ -59,6 +67,7 @@ class GeoTIFF:
         })
 
     def data_for_scale(self, scale, resampling=Resampling.bilinear):
+        """Retrieve data scaled by the specified amount"""
         # Resampling methods: <https://rasterio.readthedocs.io/en/latest/api/rasterio.enums.html#rasterio.enums.Resampling>
         # More details: <https://desktop.arcgis.com/en/arcmap/latest/manage-data/raster-and-images/resample-function.htm>
         data = self.dataset.read(
@@ -102,33 +111,52 @@ class GeoTIFF:
 
         return feats
 
-    def to_image(self):
-        data = reshape_as_image(self.dataset)
-        return Image.fromarray(data)
+    def to_image(self, colormap=None):
+        data = reshape_as_image(self.dataset.read())
+
+        # Normalize
+        mn = data.min(axis=(0, 1), keepdims=True)
+        mx = data.max(axis=(0, 1), keepdims=True)
+        data = (data - mn)/(mx - mn)
+
+        # Grayscale
+        if data.shape[-1] == 1:
+            # Use colormap, if specified
+            if colormap is not None:
+                cm = plt.get_cmap(colormap)
+                data = cm(data)
+
+            # Otherwise, just convert to RGB
+            else:
+                data = np.concatenate((data,)*3, axis=-1)
+
+        # Convert to RGBA
+        if data.shape[-1] == 3:
+            data = np.dstack((data, np.full(data.shape[:2], 1.)))
+
+        return Image.fromarray((data*255).astype('uint8'), 'RGBA')
 
     def show(self, cmap='viridis'):
         show(self.dataset, transform=self.dataset.transform, cmap=cmap)
 
+    def point_to_index(self, point, from_proj='epsg:4326'):
+        """EPSG:4326 is eqiuvalent to WGS:84.
+        `point` is expected to be (lat, lon)"""
+        if from_proj not in self.transformers:
+            self.transformers[from_proj] = Transformer.from_crs(CRS(from_proj), self.proj)
 
-if __name__ == '__main__':
-    # equivalent to wgs:84
-    from_proj = CRS('epsg:4326')
+        x, y = self.transformers[from_proj].transform(*point)
+        row, col = self.dataset.index(x, y)
+        print('row, col:', row, col)
+        return row, col
 
-    # (very) rough bounding box for Addis Ababa
-    bounds = (9.089963, 38.653849, 8.822045, 38.898295)
-
-    scale = 2
-
-    # Note: this is for the whole of Ethiopia
-    gt = GeoTIFF('data/PopulationDensity2015EJRC/etnaejrcpopd2015.tif')
-
-    gt.apply_bounds(bounds, from_proj)
-    gt.apply_scale(scale)
-
-    index = gt.dataset.indexes[0]
-    data = gt.dataset.read(index)
-    # Convert to population per sqm
-    data /= 5000
-
-    # Show data
-    gt.show()
+    def apply_features_mask(self, feats, invert=False):
+        """Mask feature shapes
+        <https://rasterio.readthedocs.io/en/latest/topics/masking-by-shapefile.html>"""
+        shapes = [feat['geometry'] for feat in feats]
+        data, transform = rasterio.mask.mask(self.dataset, shapes, invert=invert)
+        self._apply(data, {
+            'height': data.shape[1],
+            'width': data.shape[2],
+            'transform': transform
+        })
