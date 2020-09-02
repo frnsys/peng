@@ -38,7 +38,7 @@ Note on cookies: it seems many cookie prefixed with '__' don't load correctly, s
 from time import sleep
 from browser import Browser
 
-URL_TMPL = 'https://earth.google.com/web/@{lat},{lng},2219.58838331a,1350.77250487d,35y,124.67647195h,0t,0r/data=CigiJgokCcwv6r_SvDVAEcov6r_SvDXAGdVXxIMUsEdAIcVzI_96RUzA'
+URL_TMPL = 'https://earth.google.com/web/@{lat},{lng},{alt}a,1350.77250487d,35y,124.67647195h,0t,0r/data=CigiJgokCcwv6r_SvDVAEcov6r_SvDXAGdVXxIMUsEdAIcVzI_96RUzA'
 
 class EarthWeb:
     def __init__(self, cookies_path, virtual_display=True, sleep=10):
@@ -50,8 +50,8 @@ class EarthWeb:
         # How long to pause between actions
         self.sleep = sleep
 
-    def screenshot(self, point, fname):
-        url = URL_TMPL.format(**point)
+    def screenshot(self, point, altitude, fname):
+        url = URL_TMPL.format(alt=altitude, **point)
         self.browser.visit(url)
         sleep(self.sleep)
 
