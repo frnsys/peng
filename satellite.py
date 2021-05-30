@@ -48,8 +48,8 @@ new_names = ee.List(list(band_names.values()))
 l8sr = l8sr.select(old_names, new_names).map(maskClouds)
 
 class Satellite:
-    def __init__(self):
-        self.imgcol = l8sr
+    def __init__(self, image_source=l8sr):
+        self.imgcol = image_source
 
     def get_image_region(self, feat):
         """Get RGB bands for image region intersecting
