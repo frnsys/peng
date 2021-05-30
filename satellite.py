@@ -20,42 +20,53 @@ tasks = ee.data.getTaskList()
 # Using Landsat 8 Surface Reflectance Tier 1
 # Resolution of 30m^2
 # <https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T1_SR>
-l8sr = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+default_source =  {
+    'name': 'LANDSAT/LC08/C01/T1_SR',
 
-# Rename band names
-# (see prev link for reference)
-band_names = {
-    'B1': 'ultra_blue',
-    'B2': 'blue',
-    'B3': 'green',
-    'B4': 'red',
-    'B5': 'nir',
-    'B6': 'swir_1',
-    'B7': 'swir_2',
+    # Rename band names
+    # (see prev link for reference)
+    'bands': {
+        'B1': 'ultra_blue',
+        'B2': 'blue',
+        'B3': 'green',
+        'B4': 'red',
+        'B5': 'nir',
+        'B6': 'swir_1',
+        'B7': 'swir_2',
 
-    # Not in this dataset
-    #'B8': 'pan',
-    #'B9': 'cirrus',
+        # Not in this dataset
+        #'B8': 'pan',
+        #'B9': 'cirrus',
 
-    'B10': 'tirs_1',
-    'B11': 'tirs_2',
-    'sr_aerosol': 'sr_aerosol',
-    'pixel_qa': 'pixel_qa',
-    'radsat_qa': 'radsat_qa'
+        'B10': 'tirs_1',
+        'B11': 'tirs_2',
+        'sr_aerosol': 'sr_aerosol',
+        'pixel_qa': 'pixel_qa',
+        'radsat_qa': 'radsat_qa'
+    },
+
+    'range': (0, 3000),
+
+    'mask': maskClouds,
 }
-old_names = ee.List(list(band_names.keys()))
-new_names = ee.List(list(band_names.values()))
-l8sr = l8sr.select(old_names, new_names).map(maskClouds)
 
 class Satellite:
-    def __init__(self, image_source=l8sr):
-        self.imgcol = image_source
+    def __init__(self, img_source=default_source):
+        self.src = img_source
+        self.range = self.src['range']
+        self.imgcol = ee.ImageCollection(img_source['name'])
+
+        old_names = ee.List(list(img_source['bands'].keys()))
+        new_names = ee.List(list(img_source['bands'].values()))
+        self.imgcol = self.imgcol.select(old_names, new_names)
+        if 'mask' in img_source:
+            self.imgcol = self.imgcol.map(img_source['mask'])
 
     def get_image_region(self, feat):
         """Get RGB bands for image region intersecting
         w/ this feature's geometry"""
         return self.imgcol.filter(ee.Filter.geometry(ee.Feature(feat).geometry())).median()\
-            .visualize(min=0, max=3000, bands=['red', 'green', 'blue'])
+            .visualize(min=self.range[0], max=self.range[1], bands=['red', 'green', 'blue'])
 
     # https://developers.google.com/earth-engine/scale
     # Smaller scale means more detail
