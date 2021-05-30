@@ -1,4 +1,3 @@
-import os
 import ee
 from .util import download_ee_image, get_bounds, uuid
 
@@ -47,7 +46,7 @@ default_source =  {
 
     'range': (0, 3000),
 
-    'mask': maskClouds,
+    'process': lambda col: col.map(maskClouds)
 }
 
 class Satellite:
@@ -59,8 +58,8 @@ class Satellite:
         old_names = ee.List(list(img_source['bands'].keys()))
         new_names = ee.List(list(img_source['bands'].values()))
         self.imgcol = self.imgcol.select(old_names, new_names)
-        if 'mask' in img_source:
-            self.imgcol = self.imgcol.map(img_source['mask'])
+        if 'process' in img_source:
+            self.imgcol = img_source['process'](self.imgcol)
 
     def get_image_region(self, feat):
         """Get RGB bands for image region intersecting
